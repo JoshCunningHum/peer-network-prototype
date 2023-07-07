@@ -1,6 +1,5 @@
 import PeerArray from "./PeerArray";
 
-
 class PeerNetworkConfig{
     host = false;
     transfer_enabled = true;
@@ -10,9 +9,11 @@ class PeerNetworkConfig{
     // More Options in the future
 }
 
-
 // haha lol, too lazy to do redundant assignments
 export default class PeerNetwork extends PeerNetworkConfig{
+
+    //#region PeerArrays
+
     /**
      * All active connections.
      * Only 1 for non-host (Joining Peer).
@@ -31,6 +32,11 @@ export default class PeerNetwork extends PeerNetworkConfig{
      */
     processing = new PeerArray();
 
+    //#endregion PeerArrays
+
+    //#region Events
+    //#endregion Events
+
     /**
      * 
      * @param {PeerNetworkConfig} opts Peer Network Configuration
@@ -41,6 +47,16 @@ export default class PeerNetwork extends PeerNetworkConfig{
         // apply options
         Object.assign(this, opts);
 
+        // start network
+        this.restart(this.host);
+    }
+
+    /**
+     * 
+     * @param {Boolean} host 
+     */
+    restart(host = false){
 
     }
+    
 }

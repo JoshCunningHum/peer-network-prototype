@@ -62,7 +62,7 @@ export default class PeerArray extends Array{
     /**
      * 
      * @param {Peer} peer 
-     * @returns {(Peer | null)}
+     * @returns {(Peer | null)} This should be transfered to another peer array or destroyed
      */
     remove(peer){
         const index = this.index(peer);
