@@ -1,3 +1,4 @@
+import Peer from "./Peer";
 import PeerArray from "./PeerArray";
 
 class PeerNetworkConfig{
@@ -7,6 +8,7 @@ class PeerNetworkConfig{
     transfer_timeout = 2000;
 
     // More Options in the future
+    // reconnect = false;
 }
 
 // haha lol, too lazy to do redundant assignments
@@ -56,6 +58,27 @@ export default class PeerNetwork extends PeerNetworkConfig{
      * @param {Boolean} host 
      */
     restart(host = false){
+        this.host = host;
+
+        // Remove all dangling webrtc connection
+        // this.active.clean();
+        // this.initialized.clean();
+        // this.processing.clean();
+
+        // If host then create an initiator peer
+        if(this.host) this.offer();
+    }
+
+
+    offer(){
+        if(!this.host) return;
+        const peer = new Peer(this);
+
+        const success = this.initialized.add(peer);
+        if(!success) throw new Error("Failed to add peer on initialization");
+    }
+
+    answer(){
 
     }
     

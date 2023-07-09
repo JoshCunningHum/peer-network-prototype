@@ -1,5 +1,6 @@
-// eslint-disable-next-line no-unused-vars
+/* eslint-disable no-unused-vars */
 import PeerNetwork from "./PeerNetwork";
+import SimplePeer from "simple-peer";
 import { peeruuid } from "./PeerUtil";
 
 export default class Peer{
@@ -9,6 +10,10 @@ export default class Peer{
      * @type {PeerNetwork}
      */
     network;
+    /**
+     * @type {SimplePeer.Instance}
+     */
+    peer;
 
     /**
      * 
@@ -26,5 +31,9 @@ export default class Peer{
     equals(peer){
         if(!(peer instanceof Peer)) return false;
         return peer.uuid === this.uuid;
+    }
+
+    destroy(){
+
     }
 }

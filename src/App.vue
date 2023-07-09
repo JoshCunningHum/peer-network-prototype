@@ -15,18 +15,15 @@
 
     <div class="flex-grow-1 row border-top border-secondary">
       <div class=" col-3 border-end">
-        <div>
-          <h6 class="p-2 py-3">
-            {{  host ? 'Initialized initiators' : 'Joining joiners' }}
-          <hr>
-          </h6>
-        </div>
+        <!-- Pending Connections -->
+        <PeerList :list="pending" />
       </div>
       <div class=" col border-end">
         
       </div>
       <div class=" col-3">
-
+        <!-- Active Connections -->
+        <PeerList :list="active" />
       </div>
     </div>
 
@@ -34,11 +31,37 @@
 </template>
 
 <script>
+// eslint-disable-next-line no-unused-vars
+import PeerNetwork from './peer-network/PeerNetwork';
+import PeerList from './components/PeerList.vue';
+
+  const network = new PeerNetwork();
+  window.network = network;
+  
   export default {
     name: "App",
+    components: {
+      PeerList
+    },
     data(){
       return {
-        host: false
+        network
+      }
+    },
+    computed: {
+      host: {
+        get(){
+          return this.network.host;
+        },
+        set(value){
+          this.network.restart(value);
+        }
+      },
+      pending(){
+        return [...this.network.initialized, ...this.network.processing]
+      },
+      active(){
+        return this.network.active;
       }
     }
   }
