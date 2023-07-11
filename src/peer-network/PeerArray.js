@@ -14,7 +14,7 @@ export default class PeerArray extends Array{
      */
     get(peer){
         if(peer instanceof Peer) return peer;
-        const index = (typeof peer === "number") ? peer : this.findIndex(peer);
+        const index = (typeof peer === "number") ? peer : this.findIndex(p => p.uuid === peer);
         if(index == -1) return null;
         return this[index];
     }
@@ -67,7 +67,11 @@ export default class PeerArray extends Array{
     remove(peer){
         const index = this.index(peer);
         if(index == -1) return null;
-        return this.slice(index, 1)[0];
+        return this.splice(index, 1)[0];
+    }
+
+    isEmpty(){
+        return this.length === 0;
     }
 
     clean(){
