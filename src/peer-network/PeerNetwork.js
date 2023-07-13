@@ -3,6 +3,7 @@ import PeerSignal from "./PeerSignal";
 import Peer from "./Peer";
 import PeerArray from "./PeerArray";
 import { parse } from "zipson/lib";
+import { invokeIfAvailable } from "./PeerUtil";
 
 //#region Event Definitions
 
@@ -28,17 +29,6 @@ import { parse } from "zipson/lib";
 
 //#endregion
 
-class NetworkUtility {
-    /**
-     *
-     * @param {Function} cb
-     * @param {...any} args
-     */
-    static invokeIfAvailable(cb, ...args) {
-        if (typeof cb === "function") cb(...args);
-    }
-}
-
 class PeerNetworkConfig {
     host = false;
     transfer_enabled = true;
@@ -50,6 +40,19 @@ class PeerNetworkConfig {
     save_history = false;
     pinging = true;
     ping_interval = 1000; // ms
+
+    /**
+     * Default RTCPeerConnection configuration when instantiating peers
+     * @type {RTCConfiguration}
+     */
+    RTC_Config = {
+        iceServers: [
+            { urls: 'stun:stun2.l.google.com:19302' }, 
+            { urls: 'stun:stun3.l.google.com:19302' }, 
+            { urls: 'stun:stun4.l.google.com:19302' }, 
+            { urls: 'stun:global.stun.twilio.com:3478?transport=udp' }
+        ]
+    }
 
     // More Options in the future
     // reconnect = false; // Requires a signal handler
@@ -348,7 +351,7 @@ export default class PeerNetwork extends PeerNetworkConfig {
                 return;
         }
 
-        NetworkUtility.invokeIfAvailable(
+        invokeIfAvailable(
             callbackInfo.handler,
             ...callbackInfo.args,
             this
@@ -366,7 +369,7 @@ export default class PeerNetwork extends PeerNetworkConfig {
         const processed = parse(data),
             ev = processed.shift();
 
-        NetworkUtility.invokeIfAvailable(this._events.get(ev), ...processed);
+        invokeIfAvailable(this._events.get(ev), ...processed);
     }
 
     // /**
