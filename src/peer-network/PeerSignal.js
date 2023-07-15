@@ -1,6 +1,6 @@
 import { parse, stringify } from "zipson/lib";
 
-export default class PeerSignal {
+export default class PeerSignal{
     /**
      * @type {String}
      */
@@ -20,7 +20,7 @@ export default class PeerSignal {
 
     /**
      * 
-     * @param {SimplePeer.SignalData} simpleSignal 
+     * @param {RTCLocalSessionDescriptionInit} simpleSignal 
      * @param {String} sender uuid of the initiator peer
      * @param {String} joiner uuid of the joiner peer
      */

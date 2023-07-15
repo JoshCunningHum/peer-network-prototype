@@ -46,11 +46,13 @@ class PeerNetworkConfig {
      * @type {RTCConfiguration}
      */
     RTC_Config = {
-        iceServers: [
-            { urls: 'stun:stun2.l.google.com:19302' }, 
-            { urls: 'stun:stun3.l.google.com:19302' }, 
-            { urls: 'stun:stun4.l.google.com:19302' }, 
-            { urls: 'stun:global.stun.twilio.com:3478?transport=udp' }
+        iceServers: [  
+            {
+                urls: [
+                    'stun:stun1.l.google.com:19302',
+                    'stun:stun2.l.google.com:19302'
+                ]
+            }
         ]
     }
 
@@ -128,9 +130,9 @@ export default class PeerNetwork extends PeerNetworkConfig {
     _onDisconnect;
 
     /**
-     * @type {Map<String, DataEventCallback>}
+     * @type {Object}
      */
-    _events;
+    _events = {};
 
     //#endregion
 
@@ -254,9 +256,21 @@ export default class PeerNetwork extends PeerNetworkConfig {
                     cb;
                 break;
             default:
-                this._events.set(`_${event}`, cb);
-                this._event_names.push(event);
+                this._events[event] = this._events[event] || [];
+                this._events[event].push(cb);
         }
+    }
+
+    off(event, cb){
+        if(!this._event[event]) return;
+        const i = this._events[event].findIndex(ev => ev === cb);
+        if(i === -1) return;
+        this._events[event].splice(i, 1);
+    }
+
+    emit(event, ...args){
+        if(!this._events[event]) return;
+        this._events[event].forEach(ev => ev(...args));
     }
 
     get hasAvailableInitiators() {

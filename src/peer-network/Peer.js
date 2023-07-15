@@ -1,3 +1,4 @@
+/* eslint-disable no-unreachable */
 /* eslint-disable no-unused-vars */
 import PeerNetwork from "./PeerNetwork";
 import SimplePeer from "simple-peer";
@@ -6,6 +7,9 @@ import PeerSignal from "./PeerSignal";
 import { parse, stringify } from "zipson/lib";
 
 class Peer{
+
+    static PING_START = '%';
+    static PING_END = '&';
 
     /**
      * Different lifecycle stages of a peer
@@ -16,6 +20,10 @@ class Peer{
          */
         INIT_PEER: Symbol(),
 
+        /**
+         * Initiator Peer: For reoffer event created peers, instead of using INIT_PEER
+         */
+        INIT_REOFFER: Symbol(),
         /**
          * Initiator Peer: After creating an offer signal
          */
@@ -58,6 +66,14 @@ class Peer{
      * @type {SimplePeer.Instance}
      */
     peer;
+    /**
+     * @type {RTCPeerConnection}
+     */
+    pc;
+    /**
+     * @type {RTCDataChannel}
+     */
+    dc;
     /**
      * @type {Symbol}
      * @private
@@ -125,7 +141,7 @@ class Peer{
      */
     constructor(network, reofferFrom = null){
         this.network = network;
-        this.state = Peer.State.INIT_PEER;
+        this.state = !reofferFrom ? Peer.State.INIT_PEER : Peer.State.INIT_REOFFER;
         this.partner = reofferFrom;
         this.init(reofferFrom);
     }
@@ -134,87 +150,111 @@ class Peer{
         return this.network?.host;
     }
 
+    async offer(reoffer = null){
+        const offer = await this.pc.createOffer();
+        // offer.sdp = Peer.filterTrickle(offer.sdp);
+        await this.pc.setLocalDescription(offer);
+        // Create signal data
+        this.signalData = new PeerSignal(offer, this.uuid, reoffer ? reoffer : null);
+        // Then wait for ice gathering to finish to send the offer signal
+        this.wait_ice();
+    }
+
+    /**
+     * 
+     * @param {PeerSignal} signal 
+     */
+    async answer(signal){
+        // Set the remote description of the other peer
+        // Can be applied on both initiator and joiner
+        this.pc.setRemoteDescription(new RTCSessionDescription(signal));
+        if(this.isHost) return;
+        // Create an answer signal
+        const answer = await this.pc.createAnswer();
+        // answer.sdp = Peer.filterTrickle(answer.sdp);
+        await this.pc.setLocalDescription(answer);
+        this.signalData = new PeerSignal(answer, this.partner, this.uuid);
+        // Then wait for ice to finish gathering to send the answer signal
+        this.wait_ice();
+    }
+
+    wait_ice(){
+        console.log(`Started gathering Ice Candidate`);
+        const icestatechange = async (ev) => {
+            console.log(`Current Ice state: ${this.pc.iceGatheringState}`);
+            if(this.pc.iceGatheringState === 'complete'){
+                // Change local description
+                this.signalData.sdp = this.pc.localDescription.sdp; 
+
+                // Perform state change
+                this.state = this.isHost ? 
+                    this.state !== Peer.State.INIT_REOFFER ? 
+                        Peer.State.WAIT_ANSWER : Peer.State.WAIT_REANSWER 
+                : Peer.State.WAIT_CONNECT;
+            }
+        }
+
+        this.pc.addEventListener('icegatheringstatechange', icestatechange);
+    }
+
     /**
      * 
      * @param {String} reofferFrom 
      */
-    init(reofferFrom = null){
-        const p = this.peer = new SimplePeer({
-            initiator: this.isHost,
-            trickle: false,
-            channelName: this.uuid,
-            config: {
-                iceServers: [
-                    { urls: 'stun:stun2.l.google.com:19302' }, 
-                    { urls: 'stun:stun3.l.google.com:19302' }
-                ]
-            }
+    async init(reofferFrom = null){
+        const pc = this.pc = new RTCPeerConnection(this.network.RTC_Config);
+        const dc = this.dc = pc.createDataChannel('data', {
+            reliable: true
         });
 
         // To lock the current state of the network
-        const host = this.isHost;
+        if(this.isHost) this.offer()
+        else this.state =  Peer.State.WAIT_OFFER;
 
-        if(!host) this.state = Peer.State.WAIT_OFFER;
+        // Event Listeners Here
 
-
-        p.on("signal", data => {
-            if(this.signalData != null){
-                // If signal is already created, do something here
-
-                // This part is a guaranteed initiator peer only because only an initiator peer can signal when a signal data is already created when doing confirming
-                // A joiner peer is only emitting signal when creating an answer signal, thus it won't emit signal when there is already an answer signal
-
-                this.state = Peer.State.WAIT_CONNECT;
-            }else{
-                // signal is not yet created so...
-
-                // Build the parameter for the peer signal
-                const signalParam = [this.uuid];
-                if(!host) signalParam.unshift(this.partner);
-                else if(reofferFrom !== null) signalParam.push(this.partner);
-
-                this.signalData = new PeerSignal(data, ...signalParam);
-
-                // its confusing I know. Basically sets the state of the current peer
-                // If this is a joiner then its waiting for the connected state
-                // If this is a initiator:
-                //  If this is not a reoffer initiator, then set it waiting for an answer
-                //  If this is created as a reoffer, then set it waiting for a reanswer
-                this.state = this.isHost ? 
-                    reofferFrom === null ? Peer.State.WAIT_ANSWER : Peer.State.WAIT_REANSWER 
-                : Peer.State.WAIT_CONNECT;
+        pc.addEventListener('connectionstatechange', ev => {
+            if(pc.connectionState === 'connected'){
+                this.state = Peer.State.CONNECTED;
+            } else if(pc.connectionState === 'failed'){
+                console.error(`Failed when establishing connection`);
             }
         })
 
-        p.on("connect", () => {
-            this.state = Peer.State.CONNECTED;
+        pc.addEventListener('datachannel', (ev) => {
+            this.dc = ev.channel;
+            dc.addEventListener('message', (data) => this._onMessage(data));
+            // dc.addEventListener('open', this.setup );
             this.setup();
         })
+    }
 
-        p.on("data", data => {
-            // Exlusive for ping
-            if(ArrayBuffer.isView(data)) data = Utf8ArrayToStr(data);
+    _onMessage(event){
+        const data = event.data;
 
-            // ping signal
-            if(data === '§'){
-                this.peer.send('¨'); // send an ping end signal
-            }else if(data === '¨'){
-                this.pingArrive();
-            }else{
+        // ping signal
+        if(data === Peer.PING_START){
+            this.send(Peer.PING_END); // send a ping end signal
+        }else if(data === Peer.PING_END){
+            this.pingArrive();
+        }else{
+            // Parse the compressed string
+            let processed = data;
+            try {
+                processed = parse(data);
 
-                // Do normal stuff here
+                // Emit any attached custom events
+                if(!processed.type) throw new Error("No-Type Data");
+                this.network?.emit(processed.type, processed.data);
 
+            }catch(err){
+                console.warn(err === "No-Type Data" ? 
+                "Received data without type" : 
+                `Uncompressed data received: `, data);
             }
-        })
 
-        p.on("close", () => {
-            this.state = this.state === Peer.State.CONNECTED ? Peer.State.DISCONNECTED : Peer.State.CANCELLED;
-            this.network = null;
-        })
-
-        p.on("error", () => {
-            this.destroy();
-        })
+            this.network?.emit("message", processed);
+        }
     }
 
     /**
@@ -222,6 +262,7 @@ class Peer{
      * @private
      */
     setup(){
+
         // Ping Handling
         if(this.network?.pinging){
             this.ping();
@@ -240,9 +281,9 @@ class Peer{
         if(this.pingStart) return; // Do not send another ping signal if the last ping signal didn't arrive
         this.pingStart = Date.now();
         try {
-            this.peer.send('§');
+            this.send(Peer.PING_START);
         }catch(err){
-            // Nothing
+            console.log(`Error pinging`);
         }
     }
 
@@ -262,16 +303,8 @@ class Peer{
         try {
             if(typeof data === "string") data = parse(data);
             this.partner = this.isHost ? data.joiner : data.sender;
-            
-            this.peer.signal(data);
-            
-            
-            if(this.isHost){
-                // A signalling initiator is in its confirming process
-            }else{
-                // A signalling joiner is in its answering process
-            }
-
+            this.answer(data);
+            // this.peer.signal(data);
         }catch(err){
             console.error(`Error when signaling peer [${this.uuid}]: `, err);
         }
@@ -282,22 +315,9 @@ class Peer{
      * @param {Object} data Will always be an object
      */
     send(data){
-        const d = stringify(data);
+        const d = typeof data === "string" ? data : stringify(data);
         try{
-            this.peer.send(d);
-        }catch(err){
-            console.log(`Error when sending: `, data, err);
-        }
-    }
-
-    /**
-     * Sends data to the peer but buffers it until its ready to be sent
-     * @param {Object} data Will always be an object
-     */
-    write(data){
-        const d = stringify(data);
-        try{
-            this.peer.write(d);
+            this.dc.send(d);
         }catch(err){
             console.log(`Error when sending: `, data, err);
         }
