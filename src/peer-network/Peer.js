@@ -146,9 +146,7 @@ class Peer{
             config: {
                 iceServers: [
                     { urls: 'stun:stun2.l.google.com:19302' }, 
-                    { urls: 'stun:stun3.l.google.com:19302' }, 
-                    { urls: 'stun:stun4.l.google.com:19302' }, 
-                    { urls: 'stun:global.stun.twilio.com:3478?transport=udp' }
+                    { urls: 'stun:stun3.l.google.com:19302' }
                 ]
             }
         });
@@ -213,6 +211,10 @@ class Peer{
             this.state = this.state === Peer.State.CONNECTED ? Peer.State.DISCONNECTED : Peer.State.CANCELLED;
             this.network = null;
         })
+
+        p.on("error", () => {
+            this.destroy();
+        })
     }
 
     /**
@@ -237,7 +239,11 @@ class Peer{
         // Uses JS 'magic' casting to let 0, undefined, and null to start a ping and any number not 0 cant
         if(this.pingStart) return; // Do not send another ping signal if the last ping signal didn't arrive
         this.pingStart = Date.now();
-        this.peer.send('§');
+        try {
+            this.peer.send('§');
+        }catch(err){
+            // Nothing
+        }
     }
 
     /**
@@ -277,7 +283,11 @@ class Peer{
      */
     send(data){
         const d = stringify(data);
-        this.peer.send(d);
+        try{
+            this.peer.send(d);
+        }catch(err){
+            console.log(`Error when sending: `, data, err);
+        }
     }
 
     /**
@@ -286,7 +296,11 @@ class Peer{
      */
     write(data){
         const d = stringify(data);
-        this.peer.write(d);
+        try{
+            this.peer.write(d);
+        }catch(err){
+            console.log(`Error when sending: `, data, err);
+        }
     }
 
     /**

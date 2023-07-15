@@ -23,7 +23,8 @@
             if(!this.network?.pinging) return;
             this.i = setInterval(() => {
                 this.ping = this.peer.pingms;
-            }, this.network.interval_delay)
+            }, this.network.ping_interval)
+
         },
         unmounted(){
             clearInterval(this.i);

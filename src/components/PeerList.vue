@@ -62,7 +62,7 @@ import PeerPing from './PeerPing.vue';
                         return p + "connection";
 
                     case "WAIT_OFFER":
-                        return "an offer";
+                        return p + "an offer";
 
                     case "WAIT_ANSWER":
                     case "WAIT_REANSWER":

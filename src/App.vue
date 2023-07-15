@@ -59,19 +59,37 @@
       </div>
     </div>
 
+    <!-- Modals -->
+    <ModalManager 
+    :open="modalOpen" 
+    :modal="modal" 
+    
+    
+    />
+
   </div>
 </template>
 
 <script>
 // eslint-disable-next-line no-unused-vars
+import { computed } from 'vue';
+
+// Peer Network Classes
 import PeerNetwork from './peer-network/PeerNetwork';
 import PeerList from './components/PeerList.vue';
 import Peer from './peer-network/Peer';
+
+// Utility Classes
+import EventBus from './util/Event';
+
+// Components
 import PeerView from './components/PeerView.vue';
 import CopyReadonly from './components/CopyReadonly.vue';
 import PeerSignaller from './components/PeerSignaller.vue';
-import { computed } from 'vue';
+import ChatComponent from './components/ChatComponent.vue';
+import ModalManager from './components/ModalManager.vue';
 
+const bus = new EventBus();
 
 const network = new PeerNetwork();
 window.network = network;
@@ -83,19 +101,27 @@ export default {
     PeerList,
     PeerView,
     CopyReadonly,
-    PeerSignaller
+    PeerSignaller,
+    ModalManager
   },
   data() {
     return {
       network,
-      activePeer: null
+      activePeer: null,
+      modalOpen: false,
+      modal: ChatComponent
     }
   },
   created(){
+    // Setup Listeners here
+
+
     network.on("connect", () => {
       this.activePeer = null;
       this.$forceUpdate();
     })
+
+    // 
   },
   computed: {
     host: {
@@ -135,7 +161,8 @@ export default {
   },
   provide() {
     return {
-      network: computed(() => this.network)
+      network: this.network,
+      bus: computed(() => bus)
     }
   }
 
@@ -157,23 +184,9 @@ export default {
 }
 
 @keyframes dotty {
-  0% {
-    content: '';
-  }
-
-  25% {
-    content: '.';
-  }
-
-  50% {
-    content: '..';
-  }
-
-  75% {
-    content: '...';
-  }
-
-  100% {
-    content: '';
-  }
+  0% { content: ''; }
+  25% { content: '.'; }
+  50% { content: '..'; }
+  75% { content: '...'; }
+  100% { content: ''; }
 }</style>
