@@ -35,8 +35,8 @@ export default class PeerArray extends Array{
      */
     index(peer){
         return this.findIndex(p => {
-            return peer instanceof Peer ? p.equals(peer) :
-                typeof peer === "string" ? p.uuid === peer : false;
+            return peer instanceof Peer || typeof peer === "string" ? 
+            p.equals(peer) : false;
         })
     }
 

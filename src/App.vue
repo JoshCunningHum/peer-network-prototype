@@ -55,7 +55,7 @@
       </div>
       <div class="d-flex flex-column col-3 py-2 gap-1">
         <!-- Active Connections -->
-        <PeerList  @showPeer="showPeerOptions" :list="active" />
+        <PeerList  @showPeer="showPeerOptions" :list="active" :connected-list="true"/>
       </div>
     </div>
 

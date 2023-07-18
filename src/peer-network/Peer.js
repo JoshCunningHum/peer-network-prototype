@@ -179,7 +179,6 @@ class Peer{
     }
 
     wait_ice(){
-        console.log(`Started gathering Ice Candidate`);
         const icestatechange = async (ev) => {
             console.log(`Current Ice state: ${this.pc.iceGatheringState}`);
             if(this.pc.iceGatheringState === 'complete'){
@@ -212,20 +211,36 @@ class Peer{
         else this.state =  Peer.State.WAIT_OFFER;
 
         // Event Listeners Here
+        let con = false, dat = false;
 
         pc.addEventListener('connectionstatechange', ev => {
-            if(pc.connectionState === 'connected'){
-                this.state = Peer.State.CONNECTED;
-            } else if(pc.connectionState === 'failed'){
-                console.error(`Failed when establishing connection`);
+            console.log(`Connection state change [${this.uuid}]: ${pc.connectionState}`);
+            switch(pc.connectionState){
+                case 'connected':
+                    con = true;
+                    if(con && dat) this.state = Peer.State.CONNECTED;
+                    break;
+                case 'failed':
+                    console.error(`Failed when establishing connection`);
+                    break;
+                case 'disconnected':
+                case 'closed':
+                    console.log(`Disconnedted Peer`);
+                    this.destroy();
+                    break;
             }
         })
 
         pc.addEventListener('datachannel', (ev) => {
             this.dc = ev.channel;
-            dc.addEventListener('message', (data) => this._onMessage(data));
-            // dc.addEventListener('open', this.setup );
-            this.setup();
+
+            this.dc.onopen = (ev) => {
+                dat = true;
+                if(con && dat) this.state = Peer.State.CONNECTED;
+                dc.addEventListener('message', (data) => this._onMessage(data));
+                this.setup();
+            }
+
         })
     }
 
@@ -244,16 +259,16 @@ class Peer{
                 processed = parse(data);
 
                 // Emit any attached custom events
-                if(!processed.type) throw new Error("No-Type Data");
-                this.network?.emit(processed.type, processed.data);
-
+                if(!Array.isArray(processed)) throw new Error("No-Type Data");
+                this.network?.data(processed, this);
+                return;
             }catch(err){
                 console.warn(err === "No-Type Data" ? 
                 "Received data without type" : 
                 `Uncompressed data received: `, data);
             }
 
-            this.network?.emit("message", processed);
+            this.network?.data(processed, this);
         }
     }
 
@@ -283,7 +298,7 @@ class Peer{
         try {
             this.send(Peer.PING_START);
         }catch(err){
-            console.log(`Error pinging`);
+            console.log(`Error pinging: `, err);
         }
     }
 
@@ -317,6 +332,7 @@ class Peer{
     send(data){
         const d = typeof data === "string" ? data : stringify(data);
         try{
+            // console.log(`Trying to send data: ${data}`);
             this.dc.send(d);
         }catch(err){
             console.log(`Error when sending: `, data, err);
@@ -325,18 +341,21 @@ class Peer{
 
     /**
      * 
-     * @param {Peer} peer 
+     * @param {(Peer | String)} peer 
      * @returns {Boolean}
      */
     equals(peer){
-        if(!(peer instanceof Peer)) return false;
-        return peer.uuid === this.uuid;
+        if(!(typeof peer === "string" || peer instanceof Peer)) return false;
+        const other = typeof peer === "string" ? peer : peer.uuid;
+        return other === this.uuid || other === this.partner;
     }
 
     destroy(){
         try {
             clearInterval(this.pingInterval);
-            this.peer.destroy();
+            this.dc.close();
+            this.pc.close();
+            this.state = Peer.State.DISCONNECTED;
         }catch(err){
             console.error(`Error when destroying Peer ${this.uuid}`, err);
         }

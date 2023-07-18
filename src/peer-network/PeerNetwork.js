@@ -3,28 +3,24 @@ import PeerSignal from "./PeerSignal";
 import Peer from "./Peer";
 import PeerArray from "./PeerArray";
 import { parse } from "zipson/lib";
-import { invokeIfAvailable } from "./PeerUtil";
 
 //#region Event Definitions
 
 /**
  * @callback DataEventCallback
- * @param {Array} data  The data that was sent. Already decrypted.
+ * @param {...Object} data  The data that was sent. Already decrypted.
  * @param {Peer} sender The peer instance that relates to the callback.
- * @param {PeerNetwork} network Network instance.
  */
 
 /**
  * @callback SignalProcessCallback
  * @param {PeerSignal} signal The signal detail
  * @param {Peer} peer The peer instance that relates to the callback
- * @param {PeerNetwork} network Network instance
  */
 
 /**
  * @callback SignalConclusionCallback
  * @param {Peer} peer the peer instance that relates to the callback
- * @param {PeerNetwork} network Network instance
  */
 
 //#endregion
@@ -86,48 +82,64 @@ export default class PeerNetwork extends PeerNetworkConfig {
      */
     history = new PeerArray();
 
+    /**
+     * Contains the ids of the any other particpants in the network.
+     * @readonly
+     * @type {String[]}
+     */
+    _participants = [];
+
+    /**
+     * @readonly
+     */
+    get participants(){
+        if(this.host) return this.active.map(p => p.partner);
+        return this._participants;
+    }
+
     //#endregion
 
     //#region Events
+    // Why? To document all of these. The workflow of this thing gets confusing.
 
     /**
      * When an initiator peer created an offer.
-     * @type {SignalProcessCallback}
+     * @type {SignalProcessCallback[]}
      */
-    _onOffer;
+    _onOffer = [];
     /**
      * When a joiner peer created an answer to an offer
-     * @type {SignalProcessCallback}
+     * @type {SignalProcessCallback[]}
      */
-    _onAnswer;
+    _onAnswer = [];
     /**
      * When an initiator peer received an answer to its own offer, but not connected yet.
-     * @type {SignalProcessCallback}
+     * @type {SignalProcessCallback[]}
      */
-    _onConfirm;
+    _onConfirm = [];
     /**
      * When a peer is finally connected. Fired on both sides.
-     * @type {SignalConclusionCallback}
+     * @type {SignalConclusionCallback[]}
      */
-    _onConnect;
+    _onConnect = [];
 
     /**
      * When an answer signal is received but the receiving initiator is not in its receiving state or the initiator is not yet existing. This will create a new initiator and sends back a brand new offer to the said joiner.
      *
      * This requires a specific logic when implimenting a signalling mechanism to identify which "client" contains the specific joiner.
-     * @type {SignalProcessCallback}
+     * @type {SignalProcessCallback[]}
      */
-    _onReoffer;
+    _onReoffer = [];
     /**
      * When an initiated peer that is not yet connected is destroyed, it will call this event
-     * @type {SignalConclusionCallback}
+     * @type {SignalConclusionCallback[]}
      */
-    _onCancel;
+    _onCancel = [];
     /**
      * When a peer that is connected got disconnected.
-     * @type {SignalConclusionCallback}
+     * @type {SignalConclusionCallback[]}
      */
-    _onDisconnect;
+    _onDisconnect = [];
 
     /**
      * @type {Object}
@@ -148,6 +160,22 @@ export default class PeerNetwork extends PeerNetworkConfig {
 
         // start network
         this.restart(this.host);
+
+        // In Built Events
+
+        // Only arrive in joiner peer
+        this.on('participant-init-data', data => {
+            console.log(`Participant Data Arrived: `, data);
+            this._participants = data;
+        })
+
+        // Only arrive in joiner peer
+        this.on('participant-modify', (data, state) => {
+            console.log(`Participant Modify: ${data}[${state ? "ADD" : "REMOVE"}]`)
+            const i = this.participants.findIndex(uid => uid === data);
+            if(i === -1 && state) this.participants.push(data);
+            else if(!state) this.participants.splice(i, 1);
+        })
     }
 
     /**
@@ -252,8 +280,7 @@ export default class PeerNetwork extends PeerNetworkConfig {
             case "disconnect":
                 // Tinapulan, ye I know, stfu
                 // All description and details of each events are documented above
-                this[`_on${event.charAt(0).toUpperCase() + event.slice(1)}`] =
-                    cb;
+                this[`_on${event.charAt(0).toUpperCase() + event.slice(1)}`].push(cb);
                 break;
             default:
                 this._events[event] = this._events[event] || [];
@@ -266,11 +293,6 @@ export default class PeerNetwork extends PeerNetworkConfig {
         const i = this._events[event].findIndex(ev => ev === cb);
         if(i === -1) return;
         this._events[event].splice(i, 1);
-    }
-
-    emit(event, ...args){
-        if(!this._events[event]) return;
-        this._events[event].forEach(ev => ev(...args));
     }
 
     get hasAvailableInitiators() {
@@ -304,7 +326,7 @@ export default class PeerNetwork extends PeerNetworkConfig {
         } = Peer.State;
 
         const callbackInfo = {
-            handler: null,
+            event: null,
             args: [peer.signalData, peer],
         };
 
@@ -318,7 +340,7 @@ export default class PeerNetwork extends PeerNetworkConfig {
                 // Do not execute when current network is not host
                 if (!this.host) return;
                 this.initialized.add(peer);
-                callbackInfo.handler = this._onOffer;
+                callbackInfo.event = this._onOffer;
                 break;
             case WAIT_CONNECT:
                 this.initialized.remove(peer);
@@ -327,25 +349,35 @@ export default class PeerNetwork extends PeerNetworkConfig {
                 // Create another initiator peer when the initialized array is empty of non-reofffer initialized peer
                 if (!this.hasAvailableInitiators) this.offer();
 
-                callbackInfo.handler = this.host
+                callbackInfo.event = this.host
                     ? this._onConfirm
                     : this._onAnswer;
                 break;
             case CONNECTED:
+
                 this.initialized.remove(peer); // Looks unnecessary but for some reason some times peer remains on initialized
                 this.processing.remove(peer);
                 this.active.add(peer);
 
+                // For sending participants data on connect
+                if(this.host){
+                    // Send all current participants, exluding self
+                    this.whisper('participant-init-data', peer, this.participants.flat());
+                    // Send the new joiner to all other peers
+                    this.exclude('participant-modify', peer, peer.partner, true);
+                }
+
                 // Create another initiator peer when the initialized array is empty of non-reofffer initialized peer
                 if (!this.hasAvailableInitiators) this.offer();
 
-                callbackInfo.handler = this._onConnect;
+
+                callbackInfo.event = this._onConnect;
                 callbackInfo.args = [peer];
                 break;
             case WAIT_REANSWER:
                 if (!this.host) return;
                 this.initialized.add(peer);
-                callbackInfo.handler = this._onReoffer;
+                callbackInfo.event = this._onReoffer;
                 break;
             case CANCELLED:
                 this.initialized.remove(peer);
@@ -354,46 +386,138 @@ export default class PeerNetwork extends PeerNetworkConfig {
                 // Create another initiator peer when the initialized array is empty of non-reofffer initialized peer
                 if (!this.hasAvailableInitiators) this.offer();
 
-                callbackInfo.handler = this._onCancel;
+                callbackInfo.event = this._onCancel;
                 break;
             case DISCONNECTED:
                 this.active.remove(peer);
-                callbackInfo.handler = this._onDisconnect;
+                // Send the removal of this participant
+                if(this.host) this.broadcast('participant-modify', peer.partner, false);
+                else this.participants.splice(0);
+
+                callbackInfo.event = this._onDisconnect;
                 break;
             default:
                 // Does not do anything
                 return;
         }
 
-        invokeIfAvailable(
-            callbackInfo.handler,
-            ...callbackInfo.args,
-            this
-        );
+        callbackInfo.event.forEach(fn => fn(...callbackInfo.args, this));
     }
 
     /**
      * Invoked by peers when a data event happens
-     * @param {String} data the raw data sent through WebRTC
+     * @param {Object[]} data the processed data
+     * @param {Peer} sender the peer who sent the data
      */
-    data(data) {
+    data(data, sender) {
         /**
          * @type {Object[]}
          */
-        const processed = parse(data),
-            ev = processed.shift();
+        const ev = Array.isArray(data) ? data.shift().split(':') : null;
+        data = Array.isArray(data) ? data : [data];
 
-        invokeIfAvailable(this._events.get(ev), ...processed);
+        // Relay of data to other peers
+        if(this.host){
+            if(ev && ev[0] !== ""){
+                // This is a whisper event
+                const targets = ev.slice(0, -1);
+
+                // Relay the data to specified targets
+                this.active.filter(p => {
+                    // Do not include the sender
+                    return !sender.equals(p) && 
+                    // If the peer matches with any of specified targets
+                    targets.some(uid => p.equals(uid));
+                }).forEach(p => {
+                    p.send(data);
+                })
+
+                // Do not execute the function if the host is not included
+                if(!targets.some(uid => sender.equals(uid))) return;
+                
+            }else{
+                // A broadcast event
+                this.active.forEach(p => {
+                    // Do not include the sender
+                    if(!sender.equals(p)) return;
+                    p.send(data);
+                })
+            }
+        }
+
+        if(this._events[ev.at(-1)]){
+            this._events[ev.at(-1)].forEach(fn => {
+                fn(...data, sender)
+            })
+        }
     }
 
-    // /**
-    //  * Disconnect from the network if joiner, or removes a single peer if initiator
-    //  * @param {(Peer | String)} peer  
-    //  */
-    // disconnect(peer){
-    //     // TODO: Perform transfer here
-    //     this.active.clean();
-    //     this.processing.clean();
-    //     this.initialized.clean();
-    // }
+    /**
+     * Sends data to all clients
+     * @param {String} event The event type to emit 
+     * @param {Object[]} data The data to send to all clients in the network
+     */
+    broadcast(event,...data){
+        // Add broadcast signature
+        data.unshift(`:${event}`);
+        this.active.forEach(p => p.send(data));
+    }
+
+    /**
+     * Sends data to a specified group of peers
+     * @param {String} event the event type to emit
+     * @param {(String[] | Object[])} targets the peers to send the data to
+     * @param  {...any} data The data to send to those specified peers
+     */
+    distribute(event, targets, ...data){
+        if(!Array.isArray(targets)) targets = [targets];
+        targets = targets.map(t => typeof t === "string" ? t : t.partner);
+        data.unshift(`${targets.join(':')}:${event}`);
+        // if host, just find said targets
+        if(this.host){
+            this.active.forEach(p => {
+                if(!targets.some(t => p.equals(t))) return;
+                p.send(data);
+            })
+        }else this.active[0].send(data);
+    }
+
+    /**
+     * Sends data to all peers except to specified targets. Only works for hosts
+     * @param {String} event the event type to emit
+     * @param {String[] | Object[]} targets the peers that are excluded
+     * @param  {...any} data The data to send 
+     */
+    exclude(event, targets, ...data){
+        if(!this.host) return;
+        if(!Array.isArray(targets)) targets = [targets];
+        targets = targets.map(t => typeof t === 'string' ? t : t.partner);
+        data.unshift(event);
+        this.active.forEach(p => {
+            if(targets.some(t => p.equals(t))) return;
+            p.send(data);
+        })
+    }
+
+    /**
+     * Sends data to a specific client
+     * @param {String} event The event type to emit
+     * @param {(Peer | String)} peer The peer object to send to or the id
+     * @param  {Object[]} data The data to send to a specific client
+     */
+    whisper(event, peer, ...data){
+        if(!(peer instanceof Peer || typeof peer === 'string')) throw new Error("Whisper only accepts string or Peer Instance");
+        this.distribute(event, [peer], ...data);
+    }
+
+    /**
+     * Disconnect from the network if joiner, or removes a single peer if initiator
+     * @param {(Peer | String)} peer  
+     */
+    disconnect(peer){
+        this.active.remove(peer);
+        this.processing.remove(peer);
+        this.initialized.remove(peer);
+        peer.destroy();
+    }
 }

@@ -14,6 +14,21 @@
 
         </div>
     </div>
+    <template v-if="connectedList && !network.host && list.length > 0">
+        <hr class="my-1">
+
+        <!-- Add Participants Here -->
+        <template v-for="peer in participants" :key="peer">
+
+            <div v-if="peer !== network.active[0].uuid" :class="`peer btn d-flex justify-content-end btn-success w-100`">
+                <span></span>
+                <span class="badge bg-light text-light-emphasis" style="top: 0;">
+                    {{  peer }}
+                </span>
+            </div>
+
+        </template>
+    </template>
 </template>
 
 <script>
@@ -26,7 +41,8 @@ import PeerPing from './PeerPing.vue';
         },
         data(){
             return {
-                active: null
+                active: null,
+                participants: []
             }
         },
         props: {
@@ -36,6 +52,10 @@ import PeerPing from './PeerPing.vue';
             },
             highlight: {
                 required: false
+            },
+            connectedList: {
+                type: Boolean,
+                default: false
             }
         },
         methods: {
@@ -78,9 +98,19 @@ import PeerPing from './PeerPing.vue';
             showPeer(peer){
                 this.active = peer;
                 this.$emit("showPeer", peer);
+            },
+            updateParticpants(){
+                this.participants.splice(0);
+                this.participants.push(...this.network.participants);
             }
         },
-        emits: ['showPeer']
+        created(){
+            this.network.on("participant-init-data", this.updateParticpants);
+            this.network.on("participant-modify", this.updateParticpants);
+            this.network.on("disconnect", this.updateParticpants);
+        },
+        emits: ['showPeer'],
+        inject: ['network']
     }
 </script>
 
