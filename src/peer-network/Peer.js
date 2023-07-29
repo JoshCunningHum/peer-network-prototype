@@ -8,6 +8,7 @@ import { parse, stringify } from "zipson/lib";
 
 class Peer{
 
+    static PING_DISCONNECT = '±';
     static PING_START = '%';
     static PING_END = '&';
 
@@ -252,6 +253,8 @@ class Peer{
             this.send(Peer.PING_END); // send a ping end signal
         }else if(data === Peer.PING_END){
             this.pingArrive();
+        }else if(data === Peer.PING_DISCONNECT){
+            this.destroy();
         }else{
             // Parse the compressed string
             let processed = data;
@@ -350,8 +353,9 @@ class Peer{
         return other === this.uuid || other === this.partner;
     }
 
-    destroy(){
+    destroy(isDestroySignal = false){
         try {
+            if(!isDestroySignal) this.send(Peer.PING_DISCONNECT);
             clearInterval(this.pingInterval);
             this.dc.close();
             this.pc.close();

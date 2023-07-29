@@ -18,7 +18,7 @@
             </div>
             
             <div class="d-flex justify-content-end mt-2">
-                <button class="btn btn-danger px-3">Disconnect</button>
+                <button class="btn btn-danger px-3" @click="disconnect()">Disconnect</button>
             </div>
 
         </div>
@@ -130,6 +130,11 @@ ChartJS.register(Title, Tooltip, Legend, LineElement, CategoryScale, LinearScale
                     if(!this.peer.connected) this.pingHistory = [];
                 },
                 deep: true
+            }
+        },
+        methods: {
+            disconnect(){
+                this.network.disconnect(this.peer);
             }
         },
         mounted(){
